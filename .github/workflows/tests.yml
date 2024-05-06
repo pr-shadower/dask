@@ -7,12 +7,6 @@ on:
   schedule:
     - cron: "0 6,18 * * *"  
 
-# When this workflow is queued, automatically cancel any previous running
-# or pending jobs from the same branch
-concurrency:
-  group: ${{ github.ref }}
-  cancel-in-progress: true
-
 # Required shell entrypoint to have properly activated conda environments
 defaults:
   run:
@@ -25,32 +19,32 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["windows-latest", "ubuntu-latest", "macos-14"]
-        environment: ["3.9", "3.10", "3.11", "3.12"]
-        extra: [null]
-        exclude:
-          - os: "macos-14"
-            environment: "3.9"
-          - os: "macos-14"
-            environment: "3.10"
-          - os: "macos-14"
-            environment: "3.11"
-        include:
-          # Minimum dependencies
-          - os: "ubuntu-latest"
-            environment: "mindeps-array"
-          - os: "ubuntu-latest"
-            environment: "mindeps-dataframe"
-          - os: "ubuntu-latest"
-            environment: "mindeps-distributed"
-          - os: "ubuntu-latest"
-            environment: "mindeps-non-optional"
-          - os: "ubuntu-latest"
-            environment: "mindeps-optional"
-          # Experimental setups
-          - os: "ubuntu-latest"
-            environment: "3.12"
-            extra: "pandas-nightly"
+        os: ["ubuntu-latest"] #["windows-latest", "ubuntu-latest", "macos-14"]
+        environment: ["3.12"] #["3.9", "3.10", "3.11", "3.12"]
+        # extra: [null]
+        # exclude:
+        #   - os: "macos-14"
+        #     environment: "3.9"
+        #   - os: "macos-14"
+        #     environment: "3.10"
+        #   - os: "macos-14"
+        #     environment: "3.11"
+        # include:
+        #   # Minimum dependencies
+        #   - os: "ubuntu-latest"
+        #     environment: "mindeps-array"
+        #   - os: "ubuntu-latest"
+        #     environment: "mindeps-dataframe"
+        #   - os: "ubuntu-latest"
+        #     environment: "mindeps-distributed"
+        #   - os: "ubuntu-latest"
+        #     environment: "mindeps-non-optional"
+        #   - os: "ubuntu-latest"
+        #     environment: "mindeps-optional"
+        #   # Experimental setups
+        #   - os: "ubuntu-latest"
+        #     environment: "3.12"
+        #     extra: "pandas-nightly"
 
     env:
       PARALLEL: "true"
@@ -92,37 +86,70 @@ jobs:
 
       - name: Install
         run: source continuous_integration/scripts/install.sh
+      
+      - name: Install pytest-ranking
+        run: pip install pytest-ranking
 
+      - name: Restore pytest-ranking cache
+        id: restore-pytest-ranking-cache
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.pytest_cache/v/pytest_ranking_data
+          key: pytest-ranking-cache-${{ github.workflow }}-${{ runner.os }}-${{ matrix.python }}
+      
       - name: Run tests
         id: run_tests
-        run: source continuous_integration/scripts/run_tests.sh
+        run: |
+          set -e
 
-      - name: Coverage
-        uses: codecov/codecov-action@v3
+          if [[ $PARALLEL == 'true' ]]; then
+              export XTRATESTARGS="-n4 $XTRATESTARGS"
+          fi
 
-      # The environment file is created in continuous_integration/scripts/install.sh
-      # and can be useful when debugging locally
-      - name: Upload conda environment and test results
-        # ensure this runs even if pytest fails
-        if: >
-          always() &&
-          (steps.run_tests.outcome == 'success' || steps.run_tests.outcome == 'failure')
-        uses: actions/upload-artifact@v4
+          if [[ $COVERAGE == 'true' ]]; then
+              export XTRATESTARGS="--cov=dask --cov-report=xml --junit-xml pytest.xml $XTRATESTARGS"
+          fi
+
+          echo "py.test dask --runslow $XTRATESTARGS"
+          py.test dask --runslow $XTRATESTARGS
+
+          set +e
+      
+      - name: Save pytest-ranking cache
+        id: save-pytest-ranking-cache
+        if: always()
+        uses: actions/cache/save@v4
         with:
-          name: ${{ matrix.os }}-${{ matrix.environment }}-${{ matrix.extra }}
-          path: |
-            pytest.xml
-            env.yaml
+          path: ${{ github.workspace }}/.pytest_cache/v/pytest_ranking_data
+          key: pytest-ranking-cache-${{ github.workflow }}-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}
+
+      # - name: Coverage
+      #   uses: codecov/codecov-action@v3
+
+      # # The environment file is created in continuous_integration/scripts/install.sh
+      # # and can be useful when debugging locally
+      # - name: Upload conda environment and test results
+      #   # ensure this runs even if pytest fails
+      #   if: >
+      #     always() &&
+      #     (steps.run_tests.outcome == 'success' || steps.run_tests.outcome == 'failure')
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: ${{ matrix.os }}-${{ matrix.environment }}-${{ matrix.extra }}
+      #     path: |
+      #       pytest.xml
+      #       env.yaml
 
   # Publish an artifact for the event; used by publish-test-results.yaml
-  event_file:
-    # Do not run the schedule job on forks
-    if: github.repository == 'dask/dask' || github.event_name != 'schedule'
-    name: "Event File"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: Event File
-          path: ${{ github.event_path }}
+  # event_file:
+  #   # Do not run the schedule job on forks
+  #   if: github.repository == 'dask/dask' || github.event_name != 'schedule'
+  #   name: "Event File"
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Upload
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: Event File
+  #         path: ${{ github.event_path }}
