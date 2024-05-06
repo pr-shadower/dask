@@ -1,6 +1,6 @@
 name: Additional
 
-on: [push, pull_request]
+on: [pull_request] #[push, pull_request]
 
 # Required shell entrypoint to have properly activated conda environments
 defaults:

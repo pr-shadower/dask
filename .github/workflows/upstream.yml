@@ -3,7 +3,7 @@ name: Upstream
 on:
   schedule:
     - cron: "0 1 * * *"
-  push:
+  #push:
   pull_request:
   workflow_dispatch:
 
